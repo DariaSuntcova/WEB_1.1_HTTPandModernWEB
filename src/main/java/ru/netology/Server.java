@@ -9,7 +9,10 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -19,9 +22,12 @@ public class Server {
     private final int PORT;
     private final ExecutorService threadPool;
 
+    private final ConcurrentHashMap<String, Map<String, Handler>> handlers;
+
     public Server(int PORT) {
         this.PORT = PORT;
         threadPool = Executors.newFixedThreadPool(64);
+        handlers = new ConcurrentHashMap<>();
     }
 
     public void start() {
@@ -29,11 +35,13 @@ public class Server {
             System.out.println("Server started!");
             while (!serverSocket.isClosed()) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.printf("New connection accepted. Port: %d%n",clientSocket.getPort() );
+                System.out.printf("New connection accepted. Port: %d%n", clientSocket.getPort());
                 threadPool.execute(() -> connection(clientSocket));
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
+        } finally {
+            threadPool.shutdown();
         }
     }
 
@@ -99,5 +107,15 @@ public class Server {
             throw new RuntimeException(e);
         }
     }
+
+    public void addHandler(String method, String path, Handler handler) {
+        if (!handlers.containsKey(method)) {
+            handlers.put(method, new HashMap<>());
+        }
+        handlers.get(method).put(path, handler);
+    }
+
 }
+
+
 
