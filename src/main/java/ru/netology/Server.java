@@ -1,11 +1,9 @@
 package ru.netology;
 
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -51,42 +49,43 @@ public class Server {
     }
 
     private void connection(Socket socket) {
-        try (final var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        try (final var in = new BufferedInputStream(socket.getInputStream());
              final var out = new BufferedOutputStream(socket.getOutputStream())
         ) {
-            // read only request line for simplicity
-            // must be in form GET /path HTTP/1.1
-            final var requestLine = in.readLine();
-            final var parts = requestLine.split(" ");
-
-            if (parts.length != 3) {
-                // just close socket
-                return;
-            }
-
-            final var path = parts[1];
-            final String method = parts[0];
-
-            if (!handlers.containsKey(method)) {
+            Request request = Request.createRequest(in);
+            // Check for bad requests and drop connection
+            if (request == null || !handlers.containsKey(request.getMethod())) {
                 responseWithoutContent(out, STATUS_BAD_REQUEST);
                 return;
+            } else {
+                System.out.println("Request debug information: ");
+                System.out.println("METHOD: " + request.getMethod());
+                System.out.println("PATH: " + request.getPath());
+                System.out.println("HEADERS: " + request.getHeaders());
+                System.out.println("Query Params:");
+                for (var para : request.getQueryParams()) {
+                    System.out.println(para.getName() + " = " + para.getValue());
+                }
+
+                System.out.println("Test for dumb param name:");
+                System.out.println(request.getQueryParam("YetAnotherDumb").getName());
+                System.out.println("Test for dumb param name-value:");
+                System.out.println(request.getQueryParam("testDebugInfo").getValue());
             }
 
-            Request request = new Request(method, path);
-
-            Map<String, Handler> handlerMap = handlers.get(method);
-            if (handlerMap.containsKey(path)) {
-                Handler handler = handlerMap.get(path);
+            Map<String, Handler> handlerMap = handlers.get(request.getMethod());
+            if (handlerMap.containsKey(request.getPath())) {
+                Handler handler = handlerMap.get(request.getPath());
                 handler.handle(request, out);
             } else {
-                if (!validPaths.contains(path)) {
+                if (!validPaths.contains(request.getPath())) {
                     responseWithoutContent(out, STATUS_NOT_FOUND);
                 } else {
-                    final var filePath = Path.of(".", "public", path);
+                    final var filePath = Path.of(".", "public", request.getPath());
                     final var mimeType = Files.probeContentType(filePath);
 
                     // special case for classic
-                    if (path.equals("/classic.html")) {
+                    if (request.getPath().equals("/classic.html")) {
                         final var template = Files.readString(filePath);
                         final var content = template.replace(
                                 "{time}",
@@ -116,7 +115,7 @@ public class Server {
                     out.flush();
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | URISyntaxException e) {
             throw new RuntimeException(e);
         }
     }
